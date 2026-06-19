@@ -1,0 +1,28 @@
+export default {
+  en: {
+    coin: 'Coin',
+    send: 'Send',
+    receive: 'Receive',
+    transaction: 'Transaction',
+    addKey: 'Add Key',
+    swap: 'Swap',
+    tabCoins: 'Coins',
+    tabKeys: 'Keys',
+    tabSwap: 'Swap',
+    tabSettings: 'Settings',
+    tabBack: 'Back',
+  },
+  zh: {
+    coin: '币种',
+    send: '发送',
+    receive: '接收',
+    transaction: '交易',
+    addKey: '添加密钥',
+    swap: '兑换',
+    tabCoins: '币种',
+    tabKeys: '密钥',
+    tabSwap: '兑换',
+    tabSettings: '设置',
+    tabBack: '返回',
+  },
+};
