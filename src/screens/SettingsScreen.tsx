@@ -30,6 +30,7 @@ import {BlockbookAPI} from '../api/providers/blockbook';
 import {EthereumAPI} from '../api/providers/ethereum';
 import {setProvider} from '../api/api-registry';
 import {useT, useI18nStore, LangSetting} from '../i18n';
+import {Avatar} from '../components/Avatar';
 
 const DESC_KEYS: Record<string, string> = {
   fch: 'settings.descFch',
@@ -338,7 +339,7 @@ export function SettingsScreen({navigation}: any) {
         <Text style={styles.sectionTitle}>{t('settings.backupTitle')}</Text>
         <Text style={styles.sectionDesc}>{t('settings.backupDesc')}</Text>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.keySelector}>
+        <View style={styles.keySelector}>
           {keys.filter(k => !k.isWatchOnly && k.privateKey).map(k => (
             <TouchableOpacity
               key={k.id}
@@ -347,18 +348,21 @@ export function SettingsScreen({navigation}: any) {
                 setSelectedKeyId(k.id);
                 setShowPrivateKey(false);
               }}>
+              <Avatar address={k.id} size={32} />
               <Text
-                style={[styles.keySelectorText, selectedKeyId === k.id && styles.keySelectorTextActive]}
-                numberOfLines={1}>
-                {k.id.slice(0, 6)}...{k.id.slice(-4)}
+                style={[styles.keySelectorText, selectedKeyId === k.id && styles.keySelectorTextActive]}>
+                {k.id}
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {selectedKey && hasPrivateKey && (
           <View style={styles.backupCard}>
-            <Text style={styles.backupKeyId} numberOfLines={1}>{selectedKey.id}</Text>
+            <View style={styles.backupKeyHeader}>
+              <Avatar address={selectedKey.id} size={40} />
+              <Text style={styles.backupKeyId}>{selectedKey.id}</Text>
+            </View>
 
             <View style={styles.formatToggle}>
               <TouchableOpacity
@@ -561,7 +565,7 @@ export function SettingsScreen({navigation}: any) {
         <Text style={styles.sectionTitle}>{t('settings.about')}</Text>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>{t('settings.app')}</Text>
-          <Text style={styles.infoValue}>MyCoins v0.1.0</Text>
+          <Text style={styles.infoValue}>MyCoins v0.1.1</Text>
         </View>
       </View>
 
@@ -774,21 +778,25 @@ const styles = StyleSheet.create({
   },
   keySelector: {
     marginBottom: spacing.md,
+    gap: spacing.sm,
   },
   keySelectorItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: 20,
+    borderRadius: 12,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    marginRight: spacing.sm,
   },
   keySelectorItemActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
   keySelectorText: {
+    flex: 1,
     fontSize: fontSize.sm,
     color: colors.text,
     fontFamily: 'monospace',
@@ -804,11 +812,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  backupKeyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   backupKeyId: {
+    flex: 1,
     fontSize: fontSize.sm,
     color: colors.textSecondary,
     fontFamily: 'monospace',
-    marginBottom: spacing.sm,
   },
   formatToggle: {
     flexDirection: 'row',

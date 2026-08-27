@@ -4,6 +4,7 @@ import {KeyEntry, KeystoreManager} from '../account/keystore';
 import {KeyManager} from '../account/key-manager';
 import {CoinType} from '../coins/types';
 import {bytesToHex} from '../crypto/encoding';
+import {SecretKdf} from '../crypto/kdf';
 import {getFCHCommonApi, getFCHLegacyApi} from '../api/api-registry';
 
 async function setupFchApiKeys(key: KeyEntry) {
@@ -52,7 +53,11 @@ interface AccountState {
   addRandomKey: () => Promise<KeyEntry>;
   importKeyHex: (hex: string) => Promise<KeyEntry>;
   importKeyWIF: (wif: string) => Promise<KeyEntry>;
-  importKeyFromSecret: (secret: string) => Promise<KeyEntry>;
+  importKeyFromSecret: (
+    secret: string,
+    kdf?: SecretKdf,
+    onProgress?: (progress: number) => void,
+  ) => Promise<KeyEntry>;
   importPublicKey: (pubKeyHex: string) => Promise<KeyEntry>;
   importKeyCipher: (cipherJson: string, password: string) => Promise<KeyEntry>;
   removeKey: (fchAddress: string) => Promise<void>;
@@ -203,12 +208,12 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     return entry;
   },
 
-  importKeyFromSecret: async (secret: string) => {
+  importKeyFromSecret: async (secret, kdf, onProgress) => {
     const {keyManager} = get();
     if (!keyManager) {
       throw new Error('Not logged in');
     }
-    const entry = await keyManager.importKeyFromSecret(secret);
+    const entry = await keyManager.importKeyFromSecret(secret, kdf, onProgress);
     set({keys: keyManager.listKeys()});
     return entry;
   },

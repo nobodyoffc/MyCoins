@@ -14,6 +14,7 @@ import {colors, spacing, fontSize} from '../utils/theme';
 import {useT} from '../i18n';
 import {QrScanIcon} from '../components/TabIcons';
 import {QrScannerModal} from '../components/QrScannerModal';
+import {SecretKdf, DEFAULT_SECRET_KDF} from '../crypto/kdf';
 
 type ImportMode = 'random' | 'hex' | 'wif' | 'secret' | 'pubkey' | 'cipher';
 
@@ -27,6 +28,9 @@ export function AddKeyScreen({navigation}: any) {
   const [cipherPassword, setCipherPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [scanTarget, setScanTarget] = useState<ScanTarget | null>(null);
+  const [secretKdf, setSecretKdf] = useState<SecretKdf>(DEFAULT_SECRET_KDF);
+  // 0..1 while Argon2id runs; null when no derivation is in flight.
+  const [kdfProgress, setKdfProgress] = useState<number | null>(null);
 
   const handleScanned = (value: string) => {
     if (scanTarget === 'cipherPassword') {
@@ -61,11 +65,12 @@ export function AddKeyScreen({navigation}: any) {
           entry = await importKeyWIF(inputValue.trim());
           break;
         case 'secret':
-          if (!inputValue.trim()) {
-            Alert.alert(t('common.error'), t('addKey.errorEnterSecret'));
-            return;
-          }
-          entry = await importKeyFromSecret(inputValue.trim());
+          entry = await importKeyFromSecret(
+            inputValue.trim(),
+            secretKdf,
+            // Argon2id takes seconds on a phone; surface how far along it is.
+            secretKdf === 'argon2id' ? setKdfProgress : undefined,
+          );
           break;
         case 'pubkey':
           if (!inputValue.trim()) {
@@ -93,7 +98,30 @@ export function AddKeyScreen({navigation}: any) {
       Alert.alert(t('common.error'), err.message);
     } finally {
       setLoading(false);
+      setKdfProgress(null);
     }
+  };
+
+  // Secret mode derives the key with a chosen KDF. Argon2id is memory-hard and
+  // the default; SHA256 is a single fast hash, so a guessable phrase is cheap to
+  // brute-force — confirm before using it, the way Freer does.
+  const handleAddPress = () => {
+    if (mode !== 'secret') {
+      handleAdd();
+      return;
+    }
+    if (!inputValue.trim()) {
+      Alert.alert(t('common.error'), t('addKey.errorEnterSecret'));
+      return;
+    }
+    if (secretKdf === 'sha256') {
+      Alert.alert(t('addKey.kdfSha256WarnTitle'), t('addKey.kdfSha256WarnMsg'), [
+        {text: t('common.cancel'), style: 'cancel'},
+        {text: t('addKey.kdfProceed'), style: 'destructive', onPress: handleAdd},
+      ]);
+      return;
+    }
+    handleAdd();
   };
 
   const modes: {key: ImportMode; label: string; desc: string}[] = [
@@ -119,6 +147,7 @@ export function AddKeyScreen({navigation}: any) {
               setMode(m.key);
               setInputValue('');
               setCipherPassword('');
+              setSecretKdf(DEFAULT_SECRET_KDF);
             }}>
             <Text
               style={[
@@ -180,6 +209,37 @@ export function AddKeyScreen({navigation}: any) {
               <QrScanIcon size={24} color={colors.primary} />
             </TouchableOpacity>
           </View>
+          {mode === 'secret' && (
+            <>
+              <Text style={styles.label}>{t('addKey.kdfLabel')}</Text>
+              <View style={styles.kdfToggle}>
+                {(['argon2id', 'sha256'] as SecretKdf[]).map(k => (
+                  <TouchableOpacity
+                    key={k}
+                    style={[
+                      styles.kdfButton,
+                      secretKdf === k && styles.kdfButtonActive,
+                    ]}
+                    onPress={() => setSecretKdf(k)}>
+                    <Text
+                      style={[
+                        styles.kdfButtonText,
+                        secretKdf === k && styles.kdfButtonTextActive,
+                      ]}>
+                      {k === 'argon2id'
+                        ? t('addKey.kdfArgon2id')
+                        : t('addKey.kdfSha256')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.kdfDesc}>
+                {secretKdf === 'argon2id'
+                  ? t('addKey.kdfArgon2idDesc')
+                  : t('addKey.kdfSha256Desc')}
+              </Text>
+            </>
+          )}
           {mode === 'cipher' && (
             <>
               <Text style={styles.label}>{t('addKey.labelPassword')}</Text>
@@ -208,7 +268,7 @@ export function AddKeyScreen({navigation}: any) {
 
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
-        onPress={handleAdd}
+        onPress={handleAddPress}
         disabled={loading}>
         {loading ? (
           <ActivityIndicator color={colors.white} />
@@ -218,6 +278,12 @@ export function AddKeyScreen({navigation}: any) {
           </Text>
         )}
       </TouchableOpacity>
+
+      {kdfProgress !== null && (
+        <Text style={styles.kdfProgress}>
+          {t('addKey.kdfDeriving', {percent: Math.round(kdfProgress * 100)})}
+        </Text>
+      )}
 
       <QrScannerModal
         visible={scanTarget !== null}
@@ -283,6 +349,44 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.sm,
     fontWeight: '600',
+  },
+  kdfToggle: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  kdfButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  kdfButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  kdfButtonText: {
+    fontSize: fontSize.md,
+    color: colors.text,
+  },
+  kdfButtonTextActive: {
+    color: colors.white,
+    fontWeight: '600',
+  },
+  kdfDesc: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+    lineHeight: 18,
+  },
+  kdfProgress: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: -spacing.lg,
+    marginBottom: spacing.xxl,
   },
   input: {
     backgroundColor: colors.surface,

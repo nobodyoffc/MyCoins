@@ -20,6 +20,23 @@ import {verifyPassword} from '../account/account';
 import {formatCoinBalance, coinColor} from '../utils/format';
 import {colors, spacing, fontSize} from '../utils/theme';
 import {useT} from '../i18n';
+import {QrScanIcon} from '../components/TabIcons';
+import {QrScannerModal} from '../components/QrScannerModal';
+
+/**
+ * Pull a plain address out of a scanned QR code.
+ *
+ * Wallets commonly encode BIP-21 style payment URIs ("bitcoin:1Abc…?amount=0.1")
+ * rather than a bare address, so strip the scheme and any query string. Anything
+ * that isn't a URI is returned as-is.
+ */
+function addressFromScan(value: string): string {
+  const trimmed = value.trim();
+  const withoutScheme = trimmed.includes(':')
+    ? trimmed.slice(trimmed.indexOf(':') + 1)
+    : trimmed;
+  return withoutScheme.split('?')[0].trim();
+}
 
 export function SendScreen({route, navigation}: any) {
   const t = useT();
@@ -46,6 +63,7 @@ export function SendScreen({route, navigation}: any) {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [password, setPassword] = useState('');
   const [showAdvancedFee, setShowAdvancedFee] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [feeRateInput, setFeeRateInput] = useState(String(defaultFeeRate));
 
   // Rate that will actually be used: the typed value (or default), clamped to the
@@ -149,15 +167,23 @@ export function SendScreen({route, navigation}: any) {
 
       <View style={styles.form}>
         <Text style={styles.label}>{t('send.recipientAddress')}</Text>
-        <TextInput
-          style={[styles.input, styles.monoInput]}
-          value={recipient}
-          onChangeText={setRecipient}
-          placeholder={t('send.enterAddress', {ticker: config.ticker})}
-          placeholderTextColor={colors.textLight}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[styles.input, styles.monoInput, styles.inputFlex]}
+            value={recipient}
+            onChangeText={setRecipient}
+            placeholder={t('send.enterAddress', {ticker: config.ticker})}
+            placeholderTextColor={colors.textLight}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity
+            style={styles.scanButton}
+            onPress={() => setShowScanner(true)}
+            accessibilityLabel={t('scanner.title')}>
+            <QrScanIcon size={24} color={color} />
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.label}>{t('send.amountLabel', {ticker: config.ticker})}</Text>
         <TextInput
@@ -214,6 +240,12 @@ export function SendScreen({route, navigation}: any) {
           )}
         </TouchableOpacity>
       </View>
+
+      <QrScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScanned={value => setRecipient(addressFromScan(value))}
+      />
 
       <Modal
         visible={showPasswordModal}
@@ -300,6 +332,27 @@ const styles = StyleSheet.create({
   monoInput: {
     fontFamily: 'monospace',
     fontSize: fontSize.sm,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  inputFlex: {
+    flex: 1,
+    // Match the scan button so the two line up regardless of font metrics.
+    minHeight: 48,
+  },
+  scanButton: {
+    marginLeft: spacing.sm,
+    marginBottom: spacing.lg,
+    minHeight: 48,
+    minWidth: 48,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   feeInfo: {
     backgroundColor: colors.surface,

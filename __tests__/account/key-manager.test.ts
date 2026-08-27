@@ -88,7 +88,7 @@ describe('KeyManager', () => {
   });
 
   test('importKeyFromSecret imports from secret string', async () => {
-    const entry = await keyManager.importKeyFromSecret('my secret phrase');
+    const entry = await keyManager.importKeyFromSecret('my secret phrase', 'sha256');
     expect(entry.privateKey).toBeTruthy();
     expect(entry.id[0]).toBe('F');
   });

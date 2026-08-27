@@ -125,11 +125,23 @@ function BackPlaceholder() {
   return null;
 }
 
+// The first screen of each tab, keyed by tab name. Settings has no stack, so its
+// tab and screen share a name.
+const TAB_ROOT_SCREENS: Record<string, string> = {
+  KeysTab: 'KeyList',
+  SettingsTab: 'SettingsTab',
+  SwapTab: 'SwapList',
+  WalletTab: 'Dashboard',
+};
+
 function MainTabs() {
   const t = useT();
   return (
     <Tab.Navigator
       initialRouteName="WalletTab"
+      // Coins is the home tab, so the Android hardware back button returns there
+      // rather than to whichever tab happens to be declared first (KeysTab).
+      backBehavior="initialRoute"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {backgroundColor: colors.surface, borderTopColor: colors.border},
@@ -177,19 +189,24 @@ function MainTabs() {
         listeners={{
           tabPress: e => {
             e.preventDefault();
-            // The Keys page is reached from the avatar (no history entry),
-            // so Back from it should return to the Coins page.
             const rootRoute = navigationRef.getCurrentRoute();
             const tabState = navigationRef.getRootState();
             const activeTab = tabState?.routes[tabState.index]?.name;
-            if (activeTab === 'KeysTab' && rootRoute?.name === 'KeyList') {
-              navigationRef.navigate('WalletTab' as never);
-              return;
-            }
             // The Coins page (Dashboard) is the app's home; Back from it
             // closes the app rather than returning to a previous tab.
             if (activeTab === 'WalletTab' && rootRoute?.name === 'Dashboard') {
               BackHandler.exitApp();
+              return;
+            }
+            // Tabs are switched to, not pushed, so there is no history entry to
+            // pop once we're on a tab's own first screen — Back there means
+            // "leave this tab", which always returns to Coins.
+            if (
+              activeTab &&
+              activeTab !== 'WalletTab' &&
+              rootRoute?.name === TAB_ROOT_SCREENS[activeTab]
+            ) {
+              navigationRef.navigate('WalletTab' as never);
               return;
             }
             if (navigationRef.canGoBack()) {

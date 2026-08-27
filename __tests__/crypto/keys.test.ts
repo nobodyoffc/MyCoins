@@ -8,7 +8,8 @@ import {
   isValidPublicKey,
   publicKeyFromHex,
 } from '../../src/crypto/keys';
-import {bytesToHex} from '../../src/crypto/encoding';
+import {bytesToHex, utf8ToBytes} from '../../src/crypto/encoding';
+import {sha256} from '../../src/crypto/hash';
 
 describe('keys', () => {
   const testPrivKeyHex =
@@ -42,14 +43,24 @@ describe('keys', () => {
     expect(compressed).toBe(false);
   });
 
-  test('privateKeyFromSecret', () => {
-    const key = privateKeyFromSecret('my secret passphrase');
+  test('privateKeyFromSecret with sha256', async () => {
+    const key = await privateKeyFromSecret('my secret passphrase', 'sha256');
     expect(key.length).toBe(32);
     expect(isValidPrivateKey(key)).toBe(true);
     // Same input should always produce same key
-    const key2 = privateKeyFromSecret('my secret passphrase');
+    const key2 = await privateKeyFromSecret('my secret passphrase', 'sha256');
     expect(bytesToHex(key)).toBe(bytesToHex(key2));
+    // sha256 mode is the plain hash of the phrase.
+    expect(bytesToHex(key)).toBe(bytesToHex(sha256(utf8ToBytes('my secret passphrase'))));
   });
+
+  test('privateKeyFromSecret defaults to argon2id', async () => {
+    const argonKey = await privateKeyFromSecret('my secret passphrase');
+    expect(argonKey.length).toBe(32);
+    expect(isValidPrivateKey(argonKey)).toBe(true);
+    const shaKey = await privateKeyFromSecret('my secret passphrase', 'sha256');
+    expect(bytesToHex(argonKey)).not.toBe(bytesToHex(shaKey));
+  }, 180000);
 
   test('getPublicKey compressed', () => {
     const privKey = privateKeyFromHex(testPrivKeyHex);

@@ -8,6 +8,7 @@ import {
   publicKeyFromHex,
 } from '../crypto/keys';
 import {privateKeyToAddresses, publicKeyToAddresses} from '../crypto/address';
+import {SecretKdf, DEFAULT_SECRET_KDF} from '../crypto/kdf';
 import {Account, deriveSymkey} from './account';
 import {KeyEntry, KeystoreManager} from './keystore';
 import {decryptFromHex} from '../crypto/aes';
@@ -93,8 +94,12 @@ export class KeyManager {
     return entry;
   }
 
-  async importKeyFromSecret(secret: string): Promise<KeyEntry> {
-    const privKey = privateKeyFromSecret(secret);
+  async importKeyFromSecret(
+    secret: string,
+    kdf: SecretKdf = DEFAULT_SECRET_KDF,
+    onProgress?: (progress: number) => void,
+  ): Promise<KeyEntry> {
+    const privKey = await privateKeyFromSecret(secret, kdf, onProgress);
     const entry = this.createKeyEntry(privKey);
     this.checkDuplicate(entry.id);
     this.keys.push(entry);

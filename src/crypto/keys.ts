@@ -1,8 +1,8 @@
 import * as secp from '@noble/secp256k1';
 import {sha256 as nobleSha256} from '@noble/hashes/sha2.js';
 import {hmac} from '@noble/hashes/hmac.js';
-import {sha256} from './hash';
-import {decodeWIF, utf8ToBytes} from './encoding';
+import {decodeWIF} from './encoding';
+import {SecretKdf, deriveKeyArgon2id, deriveKeySha256} from './kdf';
 
 // Wire up sync hashes for secp256k1 signing
 secp.hashes.sha256 = nobleSha256;
@@ -42,14 +42,33 @@ export function privateKeyFromWIF(wif: string): {
   return {key, compressed};
 }
 
-export function privateKeyFromSecret(secret: string): Uint8Array {
-  const key = sha256(utf8ToBytes(secret));
+function checkDerivedKey(key: Uint8Array): Uint8Array {
   if (!isValidPrivateKey(key)) {
     throw new Error(
       'Derived key is invalid (extremely rare). Try a different secret.',
     );
   }
   return key;
+}
+
+/**
+ * Derive a prikey from a secret phrase.
+ *
+ * `argon2id` is the default and is memory-hard, so a weak phrase is far more
+ * expensive to brute-force; `sha256` is the legacy single-hash derivation, kept
+ * so keys created by older builds (and by `sha256(secret)` elsewhere) still import.
+ * Both match fc_ajdk's `Kdf`, so a phrase yields the same key in Freer and Safe.
+ */
+export async function privateKeyFromSecret(
+  secret: string,
+  kdf: SecretKdf = 'argon2id',
+  onProgress?: (progress: number) => void,
+): Promise<Uint8Array> {
+  const key =
+    kdf === 'sha256'
+      ? deriveKeySha256(secret)
+      : await deriveKeyArgon2id(secret, onProgress);
+  return checkDerivedKey(key);
 }
 
 export function getPublicKey(
