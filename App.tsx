@@ -4,6 +4,7 @@ import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {RootNavigator} from './src/navigation/RootNavigator';
 import {ApiPaymentHandler} from './src/components/ApiPaymentHandler';
 import {FloatingAvatar} from './src/components/FloatingAvatar';
+import {BackupReminder} from './src/components/BackupReminder';
 import {startAppLifecycleMonitor} from './src/utils/app-lifecycle';
 import {useI18nStore} from './src/i18n';
 
@@ -19,6 +20,7 @@ function App() {
       <RootNavigator />
       <FloatingAvatar />
       <ApiPaymentHandler />
+      <BackupReminder />
     </SafeAreaProvider>
   );
 }

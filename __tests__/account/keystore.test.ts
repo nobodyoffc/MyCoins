@@ -49,6 +49,7 @@ function createTestKeyEntry(): KeyEntry {
     publicKey: pubKey,
     isWatchOnly: false,
     addresses,
+    backedUp: false,
   };
 }
 

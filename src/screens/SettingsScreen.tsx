@@ -10,8 +10,6 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
-import Clipboard from '@react-native-clipboard/clipboard';
-import QRCode from 'react-native-qrcode-svg';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useAccountStore} from '../store/account-store';
 import {useSettingsStore} from '../store/settings-store';
@@ -21,9 +19,6 @@ import {COINS, isCoinHidden} from '../coins/registry';
 import {getMinFeeRate, DEFAULT_FEE_RATES, estimateUtxoFee} from '../coins/send-service';
 import {coinColor, formatCoinBalance} from '../utils/format';
 import {colors, spacing, fontSize} from '../utils/theme';
-import {bytesToHex, encodeWIF} from '../crypto/encoding';
-import {encryptToHex} from '../crypto/aes';
-import {KeyEntry} from '../account/keystore';
 import {BlockCypherAPI} from '../api/providers/blockcypher';
 import {BlockchairAPI} from '../api/providers/blockchair';
 import {BlockbookAPI} from '../api/providers/blockbook';
@@ -31,6 +26,7 @@ import {EthereumAPI} from '../api/providers/ethereum';
 import {setProvider} from '../api/api-registry';
 import {useT, useI18nStore, LangSetting} from '../i18n';
 import {Avatar} from '../components/Avatar';
+import {BackupKeyModal} from '../components/BackupKeyModal';
 
 const DESC_KEYS: Record<string, string> = {
   fch: 'settings.descFch',
@@ -151,44 +147,9 @@ export function SettingsScreen({navigation}: any) {
   const {apiEndpoints, apiProviderTypes, setApiEndpoint, setApiProviderType, customApiUrl, setCustomApiUrl, feeRates, setFeeRate} = useSettingsStore();
   const {clearWallet} = useWalletStore();
 
-  // Backup state
-  const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
-  const [backupFormat, setBackupFormat] = useState<'hex' | 'wif'>('hex');
-  const [showPrivateKey, setShowPrivateKey] = useState(false);
-
-  const selectedKey: KeyEntry | undefined = keys.find(k => k.id === selectedKeyId);
-  const hasPrivateKey = selectedKey && !selectedKey.isWatchOnly && selectedKey.privateKey;
-
-  const getPrivateKeyDisplay = (): string => {
-    if (!hasPrivateKey || !selectedKey?.privateKey) return '';
-    if (backupFormat === 'hex') {
-      return bytesToHex(selectedKey.privateKey);
-    }
-    return encodeWIF(selectedKey.privateKey);
-  };
-
-  const handleCopyCipher = () => {
-    if (!hasPrivateKey || !selectedKey?.privateKey || !currentAccount) return;
-    const encrypted = encryptToHex(selectedKey.privateKey, currentAccount.symkey);
-    // Convert hex ciphertext to Base64 for CryptoDataStr compatibility
-    const cipherBytes = new Uint8Array(
-      encrypted.ciphertext.match(/.{2}/g)!.map(b => parseInt(b, 16)),
-    );
-    let binary = '';
-    for (let i = 0; i < cipherBytes.length; i++) {
-      binary += String.fromCharCode(cipherBytes[i]);
-    }
-    const cipherBase64 = btoa(binary);
-    const cipherJson = JSON.stringify({
-      type: 'Password',
-      alg: 'AesGcm256@No1_NrC7',
-      cipher: cipherBase64,
-      keyName: currentAccount.id,
-      iv: encrypted.iv,
-    });
-    Clipboard.setString(cipherJson);
-    Alert.alert(t('settings.copiedTitle'), t('settings.cipherCopiedMsg'));
-  };
+  // Backup: picking a key opens the backup dialog; nothing is shown inline.
+  const [backupKeyId, setBackupKeyId] = useState<string | null>(null);
+  const backupKey = keys.find(k => k.id === backupKeyId);
 
   // Initialize local state from store
   const [groups, setGroups] = useState<Record<string, GroupState>>({});
@@ -343,68 +304,24 @@ export function SettingsScreen({navigation}: any) {
           {keys.filter(k => !k.isWatchOnly && k.privateKey).map(k => (
             <TouchableOpacity
               key={k.id}
-              style={[styles.keySelectorItem, selectedKeyId === k.id && styles.keySelectorItemActive]}
-              onPress={() => {
-                setSelectedKeyId(k.id);
-                setShowPrivateKey(false);
-              }}>
+              style={styles.keySelectorItem}
+              onPress={() => setBackupKeyId(k.id)}>
               <Avatar address={k.id} size={32} />
-              <Text
-                style={[styles.keySelectorText, selectedKeyId === k.id && styles.keySelectorTextActive]}>
+              <Text style={styles.keySelectorText} numberOfLines={1} ellipsizeMode="middle">
                 {k.id}
+              </Text>
+              <Text
+                style={[
+                  styles.backupStatus,
+                  k.backedUp ? styles.backupStatusDone : styles.backupStatusPending,
+                ]}>
+                {k.backedUp
+                  ? `\u2713 ${t('backup.badgeBackedUp')}`
+                  : `\u26a0 ${t('backup.badgeNotBackedUp')}`}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
-
-        {selectedKey && hasPrivateKey && (
-          <View style={styles.backupCard}>
-            <View style={styles.backupKeyHeader}>
-              <Avatar address={selectedKey.id} size={40} />
-              <Text style={styles.backupKeyId}>{selectedKey.id}</Text>
-            </View>
-
-            <View style={styles.formatToggle}>
-              <TouchableOpacity
-                style={[styles.formatButton, backupFormat === 'hex' && styles.formatButtonActive]}
-                onPress={() => setBackupFormat('hex')}>
-                <Text style={[styles.formatButtonText, backupFormat === 'hex' && styles.formatButtonTextActive]}>Hex</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.formatButton, backupFormat === 'wif' && styles.formatButtonActive]}
-                onPress={() => setBackupFormat('wif')}>
-                <Text style={[styles.formatButtonText, backupFormat === 'wif' && styles.formatButtonTextActive]}>WIF</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.revealButton}
-              onPress={() => setShowPrivateKey(!showPrivateKey)}>
-              <Text style={styles.revealButtonText}>
-                {showPrivateKey ? t('settings.hidePrikey') : t('settings.revealPrikey')}
-              </Text>
-            </TouchableOpacity>
-
-            {showPrivateKey && (
-              <View style={styles.qrContainer}>
-                <QRCode
-                  value={getPrivateKeyDisplay()}
-                  size={200}
-                  backgroundColor={colors.surface}
-                  color={colors.text}
-                />
-                <Text style={styles.privkeyText} selectable>
-                  {getPrivateKeyDisplay()}
-                </Text>
-              </View>
-            )}
-
-            <TouchableOpacity style={styles.cipherButton} onPress={handleCopyCipher}>
-              <Text style={styles.cipherButtonText}>{t('settings.copyCipher')}</Text>
-            </TouchableOpacity>
-            <Text style={styles.cipherHint}>{t('settings.cipherHint')}</Text>
-          </View>
-        )}
       </View>
 
       <Text style={styles.sectionTitle}>{t('settings.apiEndpoints')}</Text>
@@ -565,13 +482,19 @@ export function SettingsScreen({navigation}: any) {
         <Text style={styles.sectionTitle}>{t('settings.about')}</Text>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>{t('settings.app')}</Text>
-          <Text style={styles.infoValue}>MyCoins v0.1.1</Text>
+          <Text style={styles.infoValue}>MyCoins v0.1.2</Text>
         </View>
       </View>
 
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.logoutButtonText}>{t('settings.logout')}</Text>
       </TouchableOpacity>
+
+      <BackupKeyModal
+        visible={backupKey != null}
+        keyEntry={backupKey}
+        onClose={() => setBackupKeyId(null)}
+      />
     </ScrollView>
   );
 }
@@ -791,107 +714,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  keySelectorItemActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
   keySelectorText: {
     flex: 1,
     fontSize: fontSize.sm,
     color: colors.text,
     fontFamily: 'monospace',
   },
-  keySelectorTextActive: {
-    color: colors.white,
-    fontWeight: '600',
-  },
-  backupCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  backupKeyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  backupKeyId: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    fontFamily: 'monospace',
-  },
-  formatToggle: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  formatButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: 16,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  formatButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  formatButtonText: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-  },
-  formatButtonTextActive: {
-    color: colors.white,
-    fontWeight: '600',
-  },
-  revealButton: {
-    backgroundColor: colors.background,
-    borderRadius: 8,
-    padding: spacing.sm,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
-  },
-  revealButtonText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  qrContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  privkeyText: {
+  backupStatus: {
     fontSize: fontSize.xs,
-    color: colors.text,
-    fontFamily: 'monospace',
-    marginTop: spacing.md,
-    textAlign: 'center',
-    paddingHorizontal: spacing.sm,
-  },
-  cipherButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    padding: spacing.sm,
-    alignItems: 'center',
-  },
-  cipherButtonText: {
-    color: colors.white,
-    fontSize: fontSize.md,
     fontWeight: '600',
   },
-  cipherHint: {
-    fontSize: fontSize.xs,
-    color: colors.textLight,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-    lineHeight: 16,
+  backupStatusDone: {
+    color: colors.success,
+  },
+  backupStatusPending: {
+    color: colors.warning,
   },
   logoutButton: {
     backgroundColor: colors.error,

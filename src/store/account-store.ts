@@ -43,6 +43,10 @@ interface AccountState {
   // Account list
   availableAccounts: string[]; // account IDs
 
+  // Set to a freshly created key that the user has not been asked to back up
+  // yet. A global reminder consumes it; see components/BackupReminder.
+  pendingBackupKeyId: string | null;
+
   // Actions
   setKeystoreManager: (km: KeystoreManager) => void;
   login: (password: string) => Promise<boolean>;
@@ -60,6 +64,8 @@ interface AccountState {
   ) => Promise<KeyEntry>;
   importPublicKey: (pubKeyHex: string) => Promise<KeyEntry>;
   importKeyCipher: (cipherJson: string, password: string) => Promise<KeyEntry>;
+  markKeyBackedUp: (fchAddress: string) => Promise<void>;
+  clearPendingBackup: () => void;
   removeKey: (fchAddress: string) => Promise<void>;
   loadAvailableAccounts: () => Promise<void>;
 }
@@ -72,6 +78,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   keys: [],
   activeKeyId: null,
   availableAccounts: [],
+  pendingBackupKeyId: null,
 
   setKeystoreManager: (km: KeystoreManager) => {
     set({keystoreManager: km});
@@ -136,6 +143,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       keyManager,
       keys: keyManager.listKeys(),
       activeKeyId: firstKey.id,
+      // This key was generated for the user, not by them — make sure they are
+      // asked to back it up before they put coins on it.
+      pendingBackupKeyId: firstKey.privateKey ? firstKey.id : null,
     });
 
     // Refresh account list
@@ -153,6 +163,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       keyManager: null,
       keys: [],
       activeKeyId: null,
+      pendingBackupKeyId: null,
     });
   },
 
@@ -238,6 +249,19 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     return entry;
   },
 
+  markKeyBackedUp: async (fchAddress: string) => {
+    const {keyManager} = get();
+    if (!keyManager) {
+      throw new Error('Not logged in');
+    }
+    await keyManager.markBackedUp(fchAddress);
+    set({keys: keyManager.listKeys()});
+  },
+
+  clearPendingBackup: () => {
+    set({pendingBackupKeyId: null});
+  },
+
   removeKey: async (fchAddress: string) => {
     const {keyManager, keystoreManager, currentAccount} = get();
     if (!keyManager) {
@@ -256,6 +280,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         keyManager: null,
         keys: [],
         activeKeyId: null,
+        pendingBackupKeyId: null,
       });
       // Refresh account list
       const accounts = await keystoreManager.listAccounts();

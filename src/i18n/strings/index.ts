@@ -7,6 +7,7 @@ import login from './login';
 import createAccount from './createAccount';
 import keyList from './keyList';
 import addKey from './addKey';
+import backup from './backup';
 import dashboard from './dashboard';
 import coinDetail from './coinDetail';
 import send from './send';
@@ -25,6 +26,7 @@ const namespaces = {
   createAccount,
   keyList,
   addKey,
+  backup,
   dashboard,
   coinDetail,
   send,

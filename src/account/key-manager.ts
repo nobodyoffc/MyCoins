@@ -62,6 +62,7 @@ export class KeyManager {
       publicKey: pubKey,
       isWatchOnly: false,
       addresses,
+      backedUp: false,
     };
   }
 
@@ -116,6 +117,8 @@ export class KeyManager {
       publicKey: pubKey,
       isWatchOnly: true,
       addresses,
+      // Nothing secret to lose, so a watch-only key never needs a backup.
+      backedUp: true,
     };
     this.checkDuplicate(entry.id);
     this.keys.push(entry);
@@ -158,6 +161,19 @@ export class KeyManager {
     this.keys.push(entry);
     await this.saveKeys();
     return entry;
+  }
+
+  /** Record that the user has saved this prikey somewhere safe. */
+  async markBackedUp(fchAddress: string): Promise<void> {
+    const key = this.keys.find(k => k.id === fchAddress);
+    if (!key) {
+      throw new Error(`Key not found: ${fchAddress}`);
+    }
+    if (key.backedUp) {
+      return;
+    }
+    key.backedUp = true;
+    await this.saveKeys();
   }
 
   async removeKey(fchAddress: string): Promise<void> {

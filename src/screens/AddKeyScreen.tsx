@@ -10,11 +10,13 @@ import {
   ScrollView,
 } from 'react-native';
 import {useAccountStore} from '../store/account-store';
+import {KeyEntry} from '../account/keystore';
 import {colors, spacing, fontSize} from '../utils/theme';
 import {useT} from '../i18n';
 import {QrScanIcon} from '../components/TabIcons';
 import {QrScannerModal} from '../components/QrScannerModal';
 import {SecretKdf, DEFAULT_SECRET_KDF} from '../crypto/kdf';
+import {BackupKeyModal} from '../components/BackupKeyModal';
 
 type ImportMode = 'random' | 'hex' | 'wif' | 'secret' | 'pubkey' | 'cipher';
 
@@ -31,6 +33,8 @@ export function AddKeyScreen({navigation}: any) {
   const [secretKdf, setSecretKdf] = useState<SecretKdf>(DEFAULT_SECRET_KDF);
   // 0..1 while Argon2id runs; null when no derivation is in flight.
   const [kdfProgress, setKdfProgress] = useState<number | null>(null);
+  // Set once a new key is added and the user chose to back it up right away.
+  const [backupKeyId, setBackupKeyId] = useState<string | null>(null);
 
   const handleScanned = (value: string) => {
     if (scanTarget === 'cipherPassword') {
@@ -39,8 +43,29 @@ export function AddKeyScreen({navigation}: any) {
       setInputValue(value);
     }
   };
-  const {addRandomKey, importKeyHex, importKeyWIF, importKeyFromSecret, importPublicKey, importKeyCipher} =
+  const {keys, addRandomKey, importKeyHex, importKeyWIF, importKeyFromSecret, importPublicKey, importKeyCipher} =
     useAccountStore();
+  // Read from the store so the dialog sees the flag flip when it is marked backed up.
+  const backupKey = keys.find(k => k.id === backupKeyId);
+
+  // A fresh prikey lives only on this device, so nudge the user to save it now.
+  // Backing up is optional — "Later" just returns to the key list.
+  const promptBackup = (entry: KeyEntry) => {
+    if (entry.isWatchOnly || !entry.privateKey) {
+      Alert.alert(t('addKey.success'), t('addKey.keyAdded', {id: entry.id}), [
+        {text: t('common.ok'), onPress: () => navigation.goBack()},
+      ]);
+      return;
+    }
+    Alert.alert(
+      t('backup.promptTitle'),
+      `${t('addKey.keyAdded', {id: entry.id})}\n\n${t('backup.promptMsg')}`,
+      [
+        {text: t('backup.later'), style: 'cancel', onPress: () => navigation.goBack()},
+        {text: t('backup.backupNow'), onPress: () => setBackupKeyId(entry.id)},
+      ],
+    );
+  };
 
   const handleAdd = async () => {
     setLoading(true);
@@ -91,9 +116,7 @@ export function AddKeyScreen({navigation}: any) {
           entry = await importKeyCipher(inputValue.trim(), cipherPassword);
           break;
       }
-      Alert.alert(t('addKey.success'), t('addKey.keyAdded', {id: entry!.id}), [
-        {text: t('common.ok'), onPress: () => navigation.goBack()},
-      ]);
+      promptBackup(entry!);
     } catch (err: any) {
       Alert.alert(t('common.error'), err.message);
     } finally {
@@ -289,6 +312,15 @@ export function AddKeyScreen({navigation}: any) {
         visible={scanTarget !== null}
         onClose={() => setScanTarget(null)}
         onScanned={handleScanned}
+      />
+
+      <BackupKeyModal
+        visible={backupKey != null}
+        keyEntry={backupKey}
+        onClose={() => {
+          setBackupKeyId(null);
+          navigation.goBack();
+        }}
       />
     </ScrollView>
   );

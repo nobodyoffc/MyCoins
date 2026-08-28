@@ -8,6 +8,8 @@ export interface KeyEntry {
   publicKey: Uint8Array;
   isWatchOnly: boolean;
   addresses: Record<CoinType, string>;
+  /** True once the user has confirmed they saved this prikey somewhere safe. */
+  backedUp: boolean;
 }
 
 export interface EncryptedKeyEntry {
@@ -17,6 +19,7 @@ export interface EncryptedKeyEntry {
   publicKey: string; // hex-encoded (always stored unencrypted)
   isWatchOnly: boolean;
   addresses: Record<CoinType, string>;
+  backedUp?: boolean; // absent in keystores written before backup tracking
 }
 
 export interface KeystoreFile {
@@ -56,6 +59,7 @@ export function encryptKeyEntry(
     publicKey: bytesToHex(entry.publicKey),
     isWatchOnly: entry.isWatchOnly,
     addresses: entry.addresses,
+    backedUp: entry.backedUp,
   };
 }
 
@@ -79,6 +83,8 @@ export function decryptKeyEntry(
     publicKey: hexToBytes(encrypted.publicKey),
     isWatchOnly: encrypted.isWatchOnly,
     addresses: encrypted.addresses,
+    // Watch-only keys hold no secret, so there is nothing to back up.
+    backedUp: encrypted.backedUp ?? encrypted.isWatchOnly,
   };
 }
 

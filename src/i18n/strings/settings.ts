@@ -11,15 +11,7 @@ export default {
     langChinese: '中文',
 
     backupTitle: 'Backup Prikey',
-    backupDesc: 'Select a key to view its QR code or copy the encrypted cipher.',
-    revealPrikey: 'Reveal Prikey',
-    hidePrikey: 'Hide Prikey',
-    copyCipher: 'Copy Cipher',
-    cipherHint:
-      'Copies the password-encrypted prikey as JSON. Safe to store — requires your password to decrypt.',
-    copiedTitle: 'Copied',
-    cipherCopiedMsg:
-      'Encrypted prikey cipher copied to clipboard. You can import it with the same password.',
+    backupDesc: 'Tap a key to open its backup dialog.',
 
     apiEndpoints: 'API Endpoints',
     apiEndpointsDesc: 'Configure API servers for each blockchain. Leave empty to use defaults.',
@@ -62,13 +54,7 @@ export default {
     langChinese: '中文',
 
     backupTitle: '备份私钥',
-    backupDesc: '选择一个密钥以查看其二维码或复制加密密文。',
-    revealPrikey: '显示私钥',
-    hidePrikey: '隐藏私钥',
-    copyCipher: '复制密文',
-    cipherHint: '将密码加密后的私钥复制为 JSON。可安全保存 — 解密时需要您的密码。',
-    copiedTitle: '已复制',
-    cipherCopiedMsg: '加密私钥密文已复制到剪贴板。您可以使用相同的密码导入它。',
+    backupDesc: '点击一个密钥以打开备份对话框。',
 
     apiEndpoints: 'API 节点',
     apiEndpointsDesc: '为每条区块链配置 API 服务器。留空则使用默认值。',

@@ -13,6 +13,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useAccountStore} from '../store/account-store';
 import {useWalletStore} from '../store/wallet-store';
 import {Avatar} from '../components/Avatar';
+import {BackupKeyModal, needsBackup} from '../components/BackupKeyModal';
 import {formatAddress} from '../utils/format';
 import {colors, spacing, fontSize} from '../utils/theme';
 import {useT} from '../i18n';
@@ -23,7 +24,11 @@ export function KeyListScreen({navigation}: any) {
   const {keys, activeKeyId, setActiveKey, removeKey, currentAccount} = useAccountStore();
   const {initializeForKey, clearWallet} = useWalletStore();
 
-  const handleSelectKey = (fchAddress: string) => {
+  // The key the backup dialog is showing, and the switch waiting on it to close.
+  const [backupKeyId, setBackupKeyId] = useState<string | null>(null);
+  const backupKey = keys.find(k => k.id === backupKeyId);
+
+  const doSelectKey = (fchAddress: string) => {
     setActiveKey(fchAddress);
     const key = keys.find(k => k.id === fchAddress);
     if (key) {
@@ -31,6 +36,24 @@ export function KeyListScreen({navigation}: any) {
     }
     // Navigate to the Wallet tab's Dashboard
     navigation.getParent()?.navigate('WalletTab');
+  };
+
+  const handleSelectKey = (fchAddress: string) => {
+    const key = keys.find(k => k.id === fchAddress);
+    // Switching to a key with no backup is the moment the risk becomes real —
+    // warn first, but let the user go ahead if they want to.
+    if (key && needsBackup(key)) {
+      Alert.alert(t('backup.switchWarnTitle'), t('backup.switchWarnMsg'), [
+        {
+          text: t('backup.switchContinue'),
+          style: 'cancel',
+          onPress: () => doSelectKey(fchAddress),
+        },
+        {text: t('backup.backupNow'), onPress: () => setBackupKeyId(fchAddress)},
+      ]);
+      return;
+    }
+    doSelectKey(fchAddress);
   };
 
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -117,6 +140,17 @@ export function KeyListScreen({navigation}: any) {
                 <Text style={styles.keyLabel}>
                   {item.isWatchOnly ? t('keyList.watchOnly') : t('keyList.fullAccess')}
                 </Text>
+                {!item.isWatchOnly && (
+                  <Text
+                    style={[
+                      styles.backupBadge,
+                      item.backedUp ? styles.backupBadgeDone : styles.backupBadgePending,
+                    ]}>
+                    {item.backedUp
+                      ? `\u2713 ${t('backup.badgeBackedUp')}`
+                      : `\u26a0 ${t('backup.badgeNotBackedUp')}`}
+                  </Text>
+                )}
               </View>
               <TouchableOpacity
                 style={styles.deleteButton}
@@ -204,6 +238,18 @@ export function KeyListScreen({navigation}: any) {
           </View>
         </View>
       </Modal>
+
+      <BackupKeyModal
+        visible={backupKey != null}
+        keyEntry={backupKey}
+        onClose={() => {
+          const pending = backupKeyId;
+          setBackupKeyId(null);
+          if (pending) {
+            doSelectKey(pending);
+          }
+        }}
+      />
     </View>
   );
 }
@@ -273,6 +319,16 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  backupBadge: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+  },
+  backupBadgeDone: {
+    color: colors.success,
+  },
+  backupBadgePending: {
+    color: colors.warning,
   },
   activeBadge: {
     backgroundColor: colors.primary,
