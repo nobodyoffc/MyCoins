@@ -19,6 +19,7 @@ import {
   EncryptedEnvelope,
 } from '../../crypto/ecdh-encryption';
 import {hexToBytes, utf8ToBytes, bytesToHex} from '../../crypto/encoding';
+import {fetchWithTimeout} from '../http';
 
 export interface FCHServiceInfo {
   dealer: string;
@@ -70,6 +71,8 @@ export class CommonAPI implements CoinAPI {
   private serviceInfo: FCHServiceInfo | null = null;
   private lastBalanceSats: number | null = null;
   private lowCreditNotified = false;
+  // In-flight getService fetch, shared so concurrent callers don't each fire one.
+  private servicePromise: Promise<void> | null = null;
 
   constructor(baseUrl: string, coin: CoinType) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -93,6 +96,7 @@ export class CommonAPI implements CoinAPI {
    * Send an encrypted POST request to a common API endpoint.
    */
   private async encryptedPost(endpoint: string, params: Record<string, string>): Promise<any> {
+    await this.ensureReady();
     if (!this.clientPrivateKey || !this.serverPubkey) {
       throw new Error(`[CommonAPI] FCH API not ready (server may be offline)`);
     }
@@ -104,7 +108,7 @@ export class CommonAPI implements CoinAPI {
 
     const url = `${this.baseUrl}/mycoins/v1/${endpoint}`;
     console.log(`[CommonAPI] Fetching ${url}`);
-    const resp = await fetch(url, {
+    const resp = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(envelope),
@@ -256,17 +260,33 @@ export class CommonAPI implements CoinAPI {
    */
   async init(clientPrivateKeyHex: string): Promise<void> {
     this.clientPrivateKey = hexToBytes(clientPrivateKeyHex);
+    await this.loadService();
+  }
 
+  /**
+   * The server pubkey is fetched once at login. If that request failed (slow
+   * network right after the phone wakes, server briefly down), retry it lazily
+   * here instead of leaving FCH broken until the app is restarted.
+   */
+  private async ensureReady(): Promise<void> {
+    if (this.serverPubkey || !this.clientPrivateKey) return;
+    console.log('[CommonAPI] server pubkey missing, retrying getService');
+    await this.loadService();
+  }
+
+  private loadService(): Promise<void> {
+    if (!this.servicePromise) {
+      this.servicePromise = this.fetchService().finally(() => {
+        this.servicePromise = null;
+      });
+    }
+    return this.servicePromise;
+  }
+
+  private async fetchService(): Promise<void> {
     const url = `${this.baseUrl}/mycoins/v1/getService`;
     console.log(`[CommonAPI] init: fetching ${url}`);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    let resp;
-    try {
-      resp = await fetch(url, {signal: controller.signal});
-    } finally {
-      clearTimeout(timeout);
-    }
+    const resp = await fetchWithTimeout(url, {}, 10000);
     const json = await resp.json();
     const service = typeof json.data === 'string' ? JSON.parse(json.data) : json.data;
     if (service?.dealerPubkey) {

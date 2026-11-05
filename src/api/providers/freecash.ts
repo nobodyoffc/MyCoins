@@ -8,6 +8,7 @@ import {
   EncryptedEnvelope,
 } from '../../crypto/ecdh-encryption';
 import {hexToBytes, utf8ToBytes} from '../../crypto/encoding';
+import {fetchWithTimeout} from '../http';
 
 export class FreecashAPI implements CoinAPI {
   private config: APIConfig;
@@ -30,7 +31,11 @@ export class FreecashAPI implements CoinAPI {
 
   // --- HTTP helpers ---
 
-  private assertKeys(): void {
+  private async ensureKeys(): Promise<void> {
+    // getService at startup may have failed; retry it rather than stay broken.
+    if (this.clientPrivateKey && !this.serverPubkey) {
+      await this.init();
+    }
     if (!this.clientPrivateKey || !this.serverPubkey) {
       throw new Error('Encrypted POST requires client key and server pubkey. Call init() first.');
     }
@@ -62,7 +67,7 @@ export class FreecashAPI implements CoinAPI {
         .join('&');
       url += `?${qs}`;
     }
-    const resp = await fetch(url, {
+    const resp = await fetchWithTimeout(url, {
       method: 'GET',
       headers: {'Content-Type': 'application/json'},
     });
@@ -71,7 +76,7 @@ export class FreecashAPI implements CoinAPI {
 
   /** Encrypted POST with FCDSL body (for FcHttpRequestHandler-based servlets) */
   private async fetchPost(endpoint: string, fcdsl: any): Promise<any> {
-    this.assertKeys();
+    await this.ensureKeys();
     const requestBody: RequestBody = {
       time: Date.now(),
       nonce: Math.floor(Math.random() * 2147483647),
@@ -93,7 +98,7 @@ export class FreecashAPI implements CoinAPI {
 
   /** Encrypted POST with simple JSON params (for CommonApiBase-based servlets) */
   private async fetchSimplePost(endpoint: string, params: Record<string, string>): Promise<any> {
-    this.assertKeys();
+    await this.ensureKeys();
     const plaintext = utf8ToBytes(JSON.stringify(params));
     const envelope = encryptAsyTwoWay(plaintext, this.clientPrivateKey!, this.serverPubkey!);
     const resp = await fetch(`${this.baseUrl}/mycoins/v1/${endpoint}`, {
@@ -107,6 +112,17 @@ export class FreecashAPI implements CoinAPI {
   // --- Initialization ---
 
   async init(): Promise<FCHServiceInfo> {
+    if (!this.initPromise) {
+      this.initPromise = this.loadService().finally(() => {
+        this.initPromise = null;
+      });
+    }
+    return this.initPromise;
+  }
+
+  private initPromise: Promise<FCHServiceInfo> | null = null;
+
+  private async loadService(): Promise<FCHServiceInfo> {
     const json = await this.fetchGet('getService');
     // data may be a JSON string or object
     const service =
