@@ -2,7 +2,8 @@ import {CoinType, UTXO, Transaction, FeeEstimate, GasEstimate} from '../coins/ty
 
 export interface CoinAPI {
   getBalance(address: string): Promise<string>;
-  getUTXOs?(address: string): Promise<UTXO[]>;
+  /** opts.amount (coin units) lets servers that support it pick just enough UTXOs. */
+  getUTXOs?(address: string, opts?: {amount?: string; outputSize?: number}): Promise<UTXO[]>;
   getNonce?(address: string): Promise<number>;
   getGasPrice?(): Promise<GasEstimate>;
   broadcastTransaction(rawHex: string): Promise<string>;

@@ -24,6 +24,10 @@ export default {
     sendTo: 'Send {amount} {ticker} to:',
     passwordPlaceholder: 'Enter your password',
     confirmSend: 'Confirm Send',
+    insufficientFunds: 'Insufficient balance to cover the amount plus the network fee.',
+    tooManyInputs:
+      'This amount needs more than 200 coins (inputs) in one transaction. Send a smaller amount, or split the payment into several transactions.',
+    noCash: 'No spendable coins at this address. If you just sent a transaction, wait for it to be confirmed and try again.',
   },
   zh: {
     enterRecipient: '请输入收款地址',
@@ -50,5 +54,9 @@ export default {
     sendTo: '发送 {amount} {ticker} 至：',
     passwordPlaceholder: '请输入您的密码',
     confirmSend: '确认发送',
+    insufficientFunds: '余额不足以支付该金额及网络手续费。',
+    tooManyInputs:
+      '该金额需要在一笔交易中使用超过 200 个币（输入）。请减少发送金额，或将付款拆分为多笔交易。',
+    noCash: '该地址没有可花费的币。如果您刚发送过交易，请等待确认后重试。',
   },
 };

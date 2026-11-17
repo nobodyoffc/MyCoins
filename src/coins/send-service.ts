@@ -13,6 +13,7 @@ import {buildDogeTransaction} from './doge/tx-builder';
 import {buildEthTransfer} from './eth/tx-builder';
 import {buildErc20Transfer, ERC20_CONTRACTS} from './erc20/tx-builder';
 import {getProvider} from '../api/api-registry';
+import {getT} from '../i18n';
 
 export interface SendParams {
   coin: CoinType;
@@ -93,13 +94,15 @@ async function sendUTXO(params: SendParams, provider: any): Promise<SendResult> 
 
   console.log(`[sendUTXO] ${coin}: from=${fromAddress}, to=${toAddress}, amount=${amount}`);
 
-  // 1. Fetch UTXOs
-  const utxos = await provider.getUTXOs(fromAddress);
+  // 1. Fetch UTXOs. For FCH the server selects enough cashes for amount + fee
+  // (max 200 inputs) — an address can hold far more cashes than one listing returns.
+  const utxos =
+    coin === CoinType.FCH
+      ? await provider.getUTXOs(fromAddress, {amount, outputSize: 2})
+      : await provider.getUTXOs(fromAddress);
   console.log(`[sendUTXO] ${coin}: got ${utxos.length} UTXOs`);
   if (utxos.length === 0) {
-    throw new Error(
-      'No UTXOs available. If you just sent a transaction, please wait for it to be confirmed and try again.',
-    );
+    throw new Error(getT()('send.noCash'));
   }
 
   const txInputs: TxInput[] = utxos.map((u: any) => ({

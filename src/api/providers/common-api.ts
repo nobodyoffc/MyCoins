@@ -6,7 +6,7 @@
  *
  * Endpoints:
  *   POST /mycoins/v1/getBalance   {"coin":"FCH","address":"Fxxx"}
- *   POST /mycoins/v1/getUtxos     {"coin":"FCH","address":"Fxxx"}
+ *   POST /mycoins/v1/getUtxos     {"coin":"FCH","address":"Fxxx"[,"amount":"1.5"] | [,"size","after"]}
  *   POST /mycoins/v1/broadcast    {"coin":"FCH","rawTx":"0200..."}
  *   POST /mycoins/v1/getTxHistory  {"coin":"FCH","address":"Fxxx"}
  */
@@ -20,6 +20,55 @@ import {
 } from '../../crypto/ecdh-encryption';
 import {hexToBytes, utf8ToBytes, bytesToHex} from '../../crypto/encoding';
 import {fetchWithTimeout} from '../http';
+import {getT} from '../../i18n';
+
+/** Server cash-selection error codes (see APIP CashManager). */
+export const FCH_CODE_NO_CASH = 2007; // address has no valid cash at all
+export const FCH_CODE_INSUFFICIENT = 1026; // balance is less than amount + fee
+export const FCH_CODE_TOO_MANY_INPUTS = 2011; // enough funds, but needs > 200 inputs
+
+/** Error carrying the server's response code, so callers can branch on it. */
+export class FchApiError extends Error {
+  code: number;
+  constructor(code: number, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+/** Page size used when listing cashes without an amount (server max is 5000). */
+const CASH_PAGE_SIZE = 1000;
+/** Safety cap on the number of pages fetched in one listing. */
+const MAX_CASH_PAGES = 20;
+
+function friendlyCashError(code: number, fallback: string): string {
+  const t = getT();
+  switch (code) {
+    case FCH_CODE_INSUFFICIENT:
+      return t('send.insufficientFunds');
+    case FCH_CODE_TOO_MANY_INPUTS:
+      return t('send.tooManyInputs');
+    case FCH_CODE_NO_CASH:
+      return t('send.noCash');
+    default:
+      return fallback;
+  }
+}
+
+function mapCash(cash: any): UTXO {
+  return {
+    txid: cash.birthTxId,
+    vout: cash.birthIndex ?? 0,
+    value: cash.value,
+    scriptPubKey: cash.lockScript || '',
+  };
+}
+
+/** The server returns the paging cursor as a list; send it back as JSON text. */
+function cursorParam(last: any): string | null {
+  if (last == null) return null;
+  return typeof last === 'string' ? last : JSON.stringify(last);
+}
 
 export interface FCHServiceInfo {
   dealer: string;
@@ -96,6 +145,11 @@ export class CommonAPI implements CoinAPI {
    * Send an encrypted POST request to a common API endpoint.
    */
   private async encryptedPost(endpoint: string, params: Record<string, string>): Promise<any> {
+    return (await this.encryptedPostRaw(endpoint, params)).data;
+  }
+
+  /** Like encryptedPost, but returns the whole decrypted response (data, got, total, last...). */
+  private async encryptedPostRaw(endpoint: string, params: Record<string, string>): Promise<any> {
     await this.ensureReady();
     if (!this.clientPrivateKey || !this.serverPubkey) {
       throw new Error(`[CommonAPI] FCH API not ready (server may be offline)`);
@@ -146,7 +200,13 @@ export class CommonAPI implements CoinAPI {
     }
 
     if (respData.code !== 0) {
-      throw new Error(`[CommonAPI] ${endpoint} error [${respData.code}]: ${respData.message}`);
+      throw new FchApiError(
+        respData.code,
+        friendlyCashError(
+          respData.code,
+          `[CommonAPI] ${endpoint} error [${respData.code}]: ${respData.message}`,
+        ),
+      );
     }
 
     // Every charged response reports the user's credit balance (satoshis,
@@ -157,7 +217,7 @@ export class CommonAPI implements CoinAPI {
     this.checkCredit(balanceSats);
 
     console.log(`[CommonAPI] ${endpoint} success`);
-    return respData.data;
+    return respData;
   }
 
   /**
@@ -228,17 +288,30 @@ export class CommonAPI implements CoinAPI {
    * Works even when charged POST endpoints are blocked (credit exhausted),
    * so the user can always fund a top-up.
    */
-  async fetchValidCashesFree(address: string): Promise<UTXO[]> {
-    const url = `${this.baseUrl}/mycoins/v1/cashValid?fid=${encodeURIComponent(address)}`;
-    const resp = await fetch(url);
-    const json = await resp.json();
-    if (json.code !== 0 || !Array.isArray(json.data)) return [];
-    return json.data.map((cash: any) => ({
-      txid: cash.birthTxId,
-      vout: cash.birthIndex ?? 0,
-      value: cash.value,
-      scriptPubKey: cash.lockScript || '',
-    }));
+  async fetchValidCashesFree(address: string, amount?: string): Promise<UTXO[]> {
+    const base = `${this.baseUrl}/mycoins/v1/cashValid?fid=${encodeURIComponent(address)}`;
+    if (amount) {
+      // Server picks enough cashes (incl. fee) to cover the amount.
+      const resp = await fetch(`${base}&amount=${encodeURIComponent(amount)}`);
+      const json = await resp.json();
+      if (json.code !== 0 || !Array.isArray(json.data)) return [];
+      return json.data.map(mapCash);
+    }
+    // No amount: walk every page so large cashes beyond the first page aren't missed.
+    const all: UTXO[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < MAX_CASH_PAGES; page++) {
+      let url = `${base}&size=${CASH_PAGE_SIZE}`;
+      if (after) url += `&after=${encodeURIComponent(after)}`;
+      const resp = await fetch(url);
+      const json = await resp.json();
+      if (json.code !== 0 || !Array.isArray(json.data)) break;
+      all.push(...json.data.map(mapCash));
+      after = cursorParam(json.last);
+      if (!after || json.data.length === 0) break;
+      if (typeof json.total === 'number' && all.length >= json.total) break;
+    }
+    return all;
   }
 
   /**
@@ -316,20 +389,62 @@ export class CommonAPI implements CoinAPI {
     return String(data.balance ?? 0);
   }
 
-  async getUTXOs(address: string): Promise<UTXO[]> {
-    const data = await this.encryptedPost('getUtxos', {
-      coin: this.coin,
-      address,
-    });
-    if (!Array.isArray(data)) {
-      return [];
-    }
-    return data.map((u: any) => ({
+  /**
+   * Fetch spendable UTXOs.
+   *  - With `amount` (FCH string), the server selects enough cashes to cover
+   *    amount + fee (at most 200 inputs) and returns 1026 / 2011 when it can't.
+   *  - Without it, every page is fetched so no cash is left out.
+   */
+  async getUTXOs(
+    address: string,
+    opts?: {amount?: string; outputSize?: number},
+  ): Promise<UTXO[]> {
+    const mapUtxo = (u: any): UTXO => ({
       txid: u.txid,
       vout: u.vout,
       value: u.value,
       scriptPubKey: u.script || '',
-    }));
+    });
+
+    if (opts?.amount) {
+      const params: Record<string, string> = {
+        coin: this.coin,
+        address,
+        amount: opts.amount,
+      };
+      if (opts.outputSize) params.outputSize = String(opts.outputSize);
+      try {
+        const resp = await this.encryptedPostRaw('getUtxos', params);
+        return Array.isArray(resp.data) ? resp.data.map(mapUtxo) : [];
+      } catch (err: any) {
+        if (err instanceof FchApiError && err.code === FCH_CODE_NO_CASH) return [];
+        throw err;
+      }
+    }
+
+    const all: UTXO[] = [];
+    let after: string | null = null;
+    for (let page = 0; page < MAX_CASH_PAGES; page++) {
+      const params: Record<string, string> = {
+        coin: this.coin,
+        address,
+        size: String(CASH_PAGE_SIZE),
+      };
+      if (after) params.after = after;
+      let resp: any;
+      try {
+        resp = await this.encryptedPostRaw('getUtxos', params);
+      } catch (err: any) {
+        if (err instanceof FchApiError && err.code === FCH_CODE_NO_CASH) break;
+        throw err;
+      }
+      if (!Array.isArray(resp.data) || resp.data.length === 0) break;
+      all.push(...resp.data.map(mapUtxo));
+      after = cursorParam(resp.last);
+      if (!after) break;
+      if (typeof resp.total === 'number' && all.length >= resp.total) break;
+    }
+    return all;
   }
 
   async broadcastTransaction(rawHex: string): Promise<string> {

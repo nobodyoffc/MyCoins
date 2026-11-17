@@ -45,7 +45,7 @@ export function ApiPaymentHandler() {
     let cancelled = false;
     setLoadingCashes(true);
     getFCHCommonApi()
-      .fetchValidCashesFree(activeKey.id)
+      .fetchValidCashesFree(activeKey.id, event.minPayment)
       .then(list => {
         if (!cancelled) setUtxos(list);
       })
