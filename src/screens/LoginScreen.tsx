@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  FlatList,
   ActivityIndicator,
+  AppState,
+  InteractionManager,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useAccountStore} from '../store/account-store';
@@ -20,6 +21,44 @@ export function LoginScreen({navigation}: any) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const {login} = useAccountStore();
+  const inputRef = useRef<TextInput>(null);
+
+  // Focus the field ourselves instead of using `autoFocus`. This screen is
+  // usually mounted while the Activity window is still gaining focus (cold
+  // start, or auto-lock on resume). Some ROMs — notably Honor/MagicOS with its
+  // secure password keyboard — then bind the IME to a stale connection: the
+  // keyboard shows but typed characters never reach the field, and tapping
+  // doesn't help because the field is already focused.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const focusSoon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => inputRef.current?.focus(), 350);
+    };
+    const task = InteractionManager.runAfterInteractions(focusSoon);
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        focusSoon();
+      } else {
+        inputRef.current?.blur();
+      }
+    });
+    return () => {
+      task.cancel();
+      sub.remove();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  // If the field is already focused when tapped, the IME connection may be the
+  // dead one described above; blur and refocus to force a fresh connection.
+  const handlePressIn = () => {
+    const input = inputRef.current;
+    if (input?.isFocused()) {
+      input.blur();
+      setTimeout(() => input.focus(), 50);
+    }
+  };
 
   const handleLogin = async () => {
     if (!password.trim()) {
@@ -58,8 +97,11 @@ export function LoginScreen({navigation}: any) {
           onChangeText={setPassword}
           placeholder={t('login.passwordPlaceholder')}
           placeholderTextColor={colors.textLight}
+          ref={inputRef}
           secureTextEntry
-          autoFocus
+          autoComplete="off"
+          importantForAutofill="no"
+          onPressIn={handlePressIn}
           onSubmitEditing={handleLogin}
         />
 
